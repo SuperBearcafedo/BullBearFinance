@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 var_version = ts.__version__
 
@@ -54,23 +55,65 @@ if __name__ == '__main__':
     print(var_version)
     my_token = ""
     pro = ts.pro_api(my_token)
-    start_date = "20230601"
-    end_date = "20230614"
-    stock = "600132.SH"
+    start_date = "20220101"
+    end_date = "20230626"
+    #stock = "600132.SH"
+    stock = "600600.SH"
     #  **********下面段代码只在需要重新拉取数据时使用**********
-    #  acquire_stock(stock, start_date, end_date)
+    #acquire_stock(stock, start_date, end_date)
     #  **********上面段代码只在需要重新拉取数据时使用**********
     store_path = os.path.join(os.path.join(os.getcwd(), "Bubble"), stock + ".csv")
     stock_data = read_data_func(store_path)
     stock_data["diff"] = stock_data["close"].diff()
     stock_data["signal"] = np.where(stock_data["diff"] > 0, 1, 0)
-    print(stock_data)
+    #print(stock_data)
 
     #  以下代码为根据信号作图的结果
-    plt.figure(figsize=(10, 5))
-    stock_data["close"].plot(linewidth=2, color="k", grid=True)
-    plt.scatter(stock_data["close"].loc[stock_data.signal == 1].index, stock_data["close"][stock_data.signal == 1],
-                marker="v", s=80, c="g")
-    plt.scatter(stock_data["close"].loc[stock_data.signal == 0].index, stock_data["close"][stock_data.signal == 0],
-                marker="^", s=80, c="r")
+    # plt.figure(figsize=(10, 5))
+    # stock_data["close"].plot(linewidth=2, color="k", grid=True)
+    # plt.scatter(stock_data["close"].loc[stock_data.signal == 1].index, stock_data["close"][stock_data.signal == 1],
+    #             marker="v", s=80, c="g")
+    # plt.scatter(stock_data["close"].loc[stock_data.signal == 0].index, stock_data["close"][stock_data.signal == 0],
+    #             marker="^", s=80, c="r")
+    # plt.show()
+
+    #  下面尝试使用调整后收盘价作为信号
+    zgpa_signal = pd.DataFrame(index=stock_data.index)
+    zgpa_signal["price"] = stock_data["pre_close"]  # 赋予收盘前价格为股票价格
+    zgpa_signal["diff"] = stock_data["pre_close"].diff()  # 计算每天的价差
+    #  下面粗略求取指定天数的均值 以10为例
+    stock_data_series = pd.Series(zgpa_signal["price"])
+    window_size = 10
+    windows = stock_data_series.rolling(window_size)
+    moving_average = windows.mean()
+    moving_average_list = moving_average.tolist()
+    final_moving_average = moving_average_list[:]
+    zgpa_signal["10MA"] = final_moving_average
+    zgpa_signal["10MA"] = zgpa_signal["10MA"].fillna(zgpa_signal["price"].mean())
+    #  下面形成购买购出信号
+    zgpa_signal["signal"] = np.where(zgpa_signal["diff"] >= 0, 1, 0)  # 当第二天涨价，信号为1，否则为0
+    #  进一步要求信号大于指定均线，才能为1，否则为0
+    zgpa_signal["signal2"] = np.where(zgpa_signal["price"] > zgpa_signal["10MA"], 1, 0)
+    zgpa_signal["signal3"] = zgpa_signal["signal"] * zgpa_signal["signal2"]
+    print(zgpa_signal["signal3"])
+    zgpa_signal = zgpa_signal.fillna(0.0)  # 将NaN设置为0
+    zgpa_signal["order"] = zgpa_signal["signal3"].diff() * 100  # 一手来进行计量 100股
+    # 下面计算买的数量根据强度来进行
+    zgpa_signal["power"] = zgpa_signal["price"] / zgpa_signal["10MA"]
+    zgpa_signal["order"] = zgpa_signal["order"] * zgpa_signal["power"]
+    zgpa_signal.head()
+
+    #  下面对上述策略进行回测
+    initial_cash = 200000.00
+    zgpa_signal["stock"] = zgpa_signal["order"]*zgpa_signal["price"]  # 交易股票的市值
+    zgpa_signal["cash"] = initial_cash - (zgpa_signal["order"].diff() * zgpa_signal["price"]).cumsum()
+    zgpa_signal["total"] = zgpa_signal["stock"] + zgpa_signal["cash"]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(zgpa_signal["total"]-initial_cash)
+    #plt.plot(zgpa_signal["10MA"], "--", label="10 MA")
+    #plt.plot(zgpa_signal["price"], "+", label="stock price")
+    #plt.plot(zgpa_signal["order"].cumsum() * zgpa_signal["price"], "--", label="stock value")
+    plt.grid()
+    plt.legend(loc="center right")
     plt.show()
