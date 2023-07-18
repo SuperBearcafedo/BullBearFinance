@@ -12,7 +12,7 @@ from main import read_data_func, acquire_stock
 
 if __name__ == '__main__':
     print(var_version)
-    my_token = "d93f7a985bb9c8497adaca789293c480f15faa38ef3e12e9fc565278"
+    my_token = ""
     pro = ts.pro_api(my_token)
     start_date = "20220101"
     end_date = "20230626"
